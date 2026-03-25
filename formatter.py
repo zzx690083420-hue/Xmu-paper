@@ -743,8 +743,7 @@ def fix_heading_direct_format(doc):
             jc.set(qn('w:val'), align_val)
 
         # 章节标题（第X章）：强制另起一页
-        is_chapter = (para.style.name == chapter_style and
-                      _matches_any(para.text.strip(), HEADING1_PATTERNS))
+        is_chapter = (para.style.name == chapter_style and bool(para.text.strip()))
         pgBr = pPr.find(qn('w:pageBreakBefore'))
         if is_chapter:
             if pgBr is None:
@@ -1266,8 +1265,9 @@ def _find_post_toc_idx(doc):
 
 def _insert_chapter_section_breaks(doc, chapter_style):
     """
-    在每个章节标题（第X章）前插入 nextPage 分节符，使每章成为独立的节。
+    在每个一级标题段落前插入 nextPage 分节符，使每章成为独立的节。
     同时移除章节标题上的 pageBreakBefore（分节符已保证换页）。
+    处理所有 Heading 1 段落（含无编号章节如绪论、参考文献等）。
     返回 {section_idx: chapter_title_text} 字典（节索引 → 章节标题文字）。
     """
     # 只收集目录之后的章节标题段落（避免封面/摘要等区域被误识别为章节）
@@ -1277,8 +1277,7 @@ def _insert_chapter_section_breaks(doc, chapter_style):
         if i < post_toc_start:
             continue
         if para.style.name.lower() == chapter_style.lower() and para.text.strip():
-            if _matches_any(para.text.strip(), HEADING1_PATTERNS):
-                chapter_entries.append((i, para.text.strip()))
+            chapter_entries.append((i, para.text.strip()))
 
     if not chapter_entries:
         return {}
