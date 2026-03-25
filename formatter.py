@@ -289,8 +289,8 @@ def update_styles(doc):
     # A4，左右各2.8cm：文本宽度 = 15.4cm = 8731 twips，用于右对齐页码 tab stop
     TOC_TAB_POS = 8731  # twips
 
-    # 目录层级缩进（twips）：中文目录各级均左对齐，不做缩进
-    TOC_LEVEL_INDENT = {1: 0, 2: 0, 3: 0}
+    # 目录层级缩进（twips）：toc1=0，toc2=2字符，toc3=4字符（1字符=12pt*20=240twips）
+    TOC_LEVEL_INDENT = {1: 0, 2: 480, 3: 960}
 
     # toc 1: 14pt 加粗；toc 2: 12pt 加粗；toc 3: 12pt 非加粗（参考范文模板）
     toc_configs = [
@@ -386,7 +386,7 @@ def update_styles(doc):
             s_pPr.append(s_ind)
         for attr in (qn('w:hanging'), qn('w:firstLine')):
             s_ind.attrib.pop(attr, None)
-        s_ind.set(qn('w:left'), '0')
+        s_ind.set(qn('w:left'), str(TOC_LEVEL_INDENT.get(level, 0)))
         s_ind.set(qn('w:firstLine'), '0')
 
     # ── 对中文目录区域内所有段落强制去除左侧缩进 ──
@@ -415,6 +415,14 @@ def update_styles(doc):
                 break
 
         def _fix_toc_para_indent(para):
+            # 从样式名中判断层级，决定缩进量
+            sname = para.style.name
+            style_id = para.style.element.get(qn('w:styleId'), '')
+            toc_m = re.search(r'(?:toc|目录)\s*([123])', sname, re.IGNORECASE) or \
+                    re.search(r'(?:toc|目录)\s*([123])', style_id, re.IGNORECASE)
+            level = int(toc_m.group(1)) if toc_m else 1
+            left_str = str(TOC_LEVEL_INDENT.get(level, 0))
+
             p_elem = para._p
             pPr = p_elem.find(qn('w:pPr'))
             if pPr is None:
@@ -428,9 +436,9 @@ def update_styles(doc):
             if ind is None:
                 ind = OxmlElement('w:ind')
                 pPr.append(ind)
-            for attr in (qn('w:hanging'), qn('w:firstLine'), qn('w:left')):
+            for attr in (qn('w:hanging'), qn('w:firstLine')):
                 ind.attrib.pop(attr, None)
-            ind.set(qn('w:left'), '0')
+            ind.set(qn('w:left'), left_str)
             ind.set(qn('w:firstLine'), '0')
             jc = pPr.find(qn('w:jc'))
             if jc is None:
@@ -566,6 +574,7 @@ def _set_footer_page_number(footer):
     """
     在页脚中写入居中页码，格式：- X -
     奇数页脚和偶数页脚共用此函数。
+    彻底清除页脚 XML 内所有原有内容后重建，避免原文页码残留导致重复。
     """
     try:
         if footer.is_linked_to_previous:
@@ -573,26 +582,21 @@ def _set_footer_page_number(footer):
     except Exception:
         return
 
-    # 清除已有内容
-    for para in footer.paragraphs:
-        p_elem = para._p
-        for child in list(p_elem):
-            tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
-            if tag != 'pPr':
-                p_elem.remove(child)
+    # 获取页脚 XML 根元素
+    try:
+        ftr_xml = footer._element
+    except Exception:
+        return
+    if ftr_xml is None:
+        return
 
-    # 获取或创建段落
-    if footer.paragraphs:
-        para_elem = footer.paragraphs[0]._p
-    else:
-        try:
-            ftr_xml = footer._element
-        except Exception:
-            return
-        if ftr_xml is None:
-            return
-        para_elem = OxmlElement('w:p')
-        ftr_xml.append(para_elem)
+    # 彻底清除所有子元素（段落、文本框、表格、SDT 等），从零重建
+    for child in list(ftr_xml):
+        ftr_xml.remove(child)
+
+    # 新建段落
+    para_elem = OxmlElement('w:p')
+    ftr_xml.append(para_elem)
 
     # 设置段落样式和居中对齐
     pPr = para_elem.find(qn('w:pPr'))
@@ -894,6 +898,10 @@ def fix_captions_and_tables(doc):
     figure_count = 0
 
     for i, para in enumerate(paragraphs):
+        # 跳过表格内段落，不修改表格单元格中的内容
+        if para._p.getparent() is not None and para._p.getparent().tag == qn('w:tc'):
+            continue
+
         is_cap = _is_caption_para(para)
         has_img = _has_drawing(para)
 
@@ -962,27 +970,10 @@ def fix_captions_and_tables(doc):
             _set_pPr_flag(pPr, 'w:keepNext')
             _set_pPr_flag(pPr, 'w:keepLines')
 
-    # ── 3. 表格行禁止跨页 ────────────────────────────────────────
-    table_count = 0
-    for table in doc.tables:
-        table_count += 1
-        for row in table.rows:
-            trPr = row._tr.find(qn('w:trPr'))
-            if trPr is None:
-                trPr = OxmlElement('w:trPr')
-                row._tr.insert(0, trPr)
-            cant = trPr.find(qn('w:cantSplit'))
-            if cant is None:
-                cant = OxmlElement('w:cantSplit')
-                trPr.append(cant)
-            cant.set(qn('w:val'), '1')
-
     if caption_count:
         changes.append(f'题注格式：已修正 {caption_count} 个题注段落（宋体 10.5pt 加粗 居中）')
     if figure_count:
         changes.append(f'图片：已为 {figure_count} 个图片段落设置 keepWithNext')
-    if table_count:
-        changes.append(f'表格：已为 {table_count} 个表格设置行禁止跨页（cantSplit）')
     return changes
 
 
@@ -1011,13 +1002,22 @@ def fix_body_text_fonts(doc):
                 break
 
     fixed = 0
+    in_references = False  # 是否处于参考文献区域
     for i, para in enumerate(doc.paragraphs):
         if i < post_toc_idx:
             continue
         if first_chapter_idx is not None and i < first_chapter_idx:
             continue
 
+        text = para.text.strip()
         sname = para.style.name
+
+        # 检测进入/离开参考文献区域
+        if _matches_any(text, REFERENCE_PATTERNS):
+            in_references = True
+        elif in_references and sname.startswith('Heading') and text:
+            # 遇到下一个标题（致谢等）则离开参考文献区域
+            in_references = False
 
         # 跳过标题、目录、题注、页眉页脚等特殊样式
         if any(sname.startswith(p) for p in _SKIP_PREFIXES):
@@ -1027,12 +1027,16 @@ def fix_body_text_fonts(doc):
         if 'caption' in sname.lower() or '题注' in sname:
             continue
 
+        # 跳过表格内段落（不修改表格单元格内容）
+        if para._p.getparent() is not None and para._p.getparent().tag == qn('w:tc'):
+            continue
+
         # 跳过空段落
-        if not para.text.strip():
+        if not text:
             continue
 
         # 跳过特殊节标题（摘要/参考文献/致谢等），避免覆盖居中对齐和字号
-        if _matches_any(para.text.strip(), SECTION_TITLE_PATTERNS):
+        if _matches_any(text, SECTION_TITLE_PATTERNS):
             continue
 
         p_elem = para._p
@@ -1041,12 +1045,12 @@ def fix_body_text_fonts(doc):
             pPr = OxmlElement('w:pPr')
             p_elem.insert(0, pPr)
 
-        # 两端对齐
+        # 两端对齐（参考文献条目左对齐顶格）
         jc = pPr.find(qn('w:jc'))
         if jc is None:
             jc = OxmlElement('w:jc')
             pPr.append(jc)
-        jc.set(qn('w:val'), 'both')
+        jc.set(qn('w:val'), 'left' if in_references else 'both')
 
         # 行距 1.5 倍，段前/段后 0pt
         spacing = pPr.find(qn('w:spacing'))
@@ -1058,16 +1062,21 @@ def fix_body_text_fonts(doc):
         spacing.set(qn('w:before'), '0')
         spacing.set(qn('w:after'), '0')
 
-        # 首行缩进 2 字（12pt × 2 = 24pt = 480 twips）
+        # 缩进：参考文献条目顶格，正文首行缩进 2 字（480 twips）
         ind = pPr.find(qn('w:ind'))
         if ind is None:
             ind = OxmlElement('w:ind')
             pPr.append(ind)
-        ind.set(qn('w:firstLine'), '480')
-        ind.attrib.pop(qn('w:hanging'), None)   # 清除悬挂缩进
-        ind.attrib.pop(qn('w:left'), None)       # 清除左缩进覆盖
+        if in_references:
+            ind.set(qn('w:firstLine'), '0')
+            ind.attrib.pop(qn('w:hanging'), None)
+            ind.attrib.pop(qn('w:left'), None)
+        else:
+            ind.set(qn('w:firstLine'), '480')
+            ind.attrib.pop(qn('w:hanging'), None)
+            ind.attrib.pop(qn('w:left'), None)
 
-        # 清除段首手动缩进（制表符 / 全角/半角空格），因为已用 firstLine 控制缩进
+        # 清除段首手动缩进（制表符 / 全角/半角空格），参考文献区域也执行
         first_text_run = None
         for run in para.runs:
             if run.text:
@@ -1228,15 +1237,22 @@ def _extract_thesis_title(doc):
 def _get_chapter_heading_style(doc):
     """
     检测文档实际使用的章节标题样式名（如 'Heading 1' 或 'Heading 2'）。
-    找到最低编号的 Heading N，且其文字匹配章节模式（第X章/Chapter N）。
-    若无匹配则返回 'Heading 1'。
+    优先找匹配第X章/Chapter N 的 Heading N；若无则找最低编号的非空 Heading N。
+    若无任何 Heading 段落则返回 'Heading 1'。
     """
+    # 优先：找到匹配标准章节模式的最低 Heading 级别
     for level in range(1, 5):
         style_name = f'Heading {level}'
         for para in doc.paragraphs:
             if para.style.name == style_name and para.text.strip():
                 if _matches_any(para.text.strip(), HEADING1_PATTERNS):
                     return style_name
+    # 回退：找文档中存在的最低 Heading 级别（不要求章节模式）
+    for level in range(1, 5):
+        style_name = f'Heading {level}'
+        for para in doc.paragraphs:
+            if para.style.name == style_name and para.text.strip():
+                return style_name
     return 'Heading 1'
 
 
@@ -1339,7 +1355,7 @@ def _insert_chapter_section_breaks(doc, chapter_style):
                         runs_text = ''.join(
                             t.text or '' for t in elem.findall('.//' + qn('w:t'))
                         ).strip()
-                        if _matches_any(runs_text, HEADING1_PATTERNS):
+                        if runs_text:
                             if section_idx not in chapter_section_map:
                                 chapter_section_map[section_idx] = runs_text
                 inner_sectPr = pPr.find(qn('w:sectPr'))
