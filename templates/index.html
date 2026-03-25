@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>厦门大学论文格式工具</title>
+  <style>
+    :root {
+      --xmu-navy: #003366;
+      --xmu-blue: #005bac;
+      --xmu-light: #e8f0fb;
+      --xmu-gold: #c8a84b;
+      --success: #27ae60;
+      --error: #e74c3c;
+      --gray: #f5f6fa;
+      --border: #dde3f0;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+      background: #f0f4f8;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    /* ---- 顶部导航 ---- */
+    header {
+      background: var(--xmu-navy);
+      color: #fff;
+      padding: 0 32px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    header .logo {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: #fff;
+    }
+    header .logo span {
+      color: var(--xmu-gold);
+    }
+    header .subtitle {
+      font-size: 13px;
+      color: rgba(255,255,255,0.65);
+      margin-left: 4px;
+    }
+
+    /* ---- 主体 ---- */
+    main {
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 0 20px 60px;
+    }
+
+    /* ---- 卡片 ---- */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,51,102,0.08);
+      padding: 28px 32px;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--xmu-navy);
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 18px;
+      background: var(--xmu-blue);
+      border-radius: 2px;
+    }
+
+    /* ---- 上传区域 ---- */
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 48px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: var(--gray);
+    }
+    #drop-zone:hover, #drop-zone.drag-over {
+      border-color: var(--xmu-blue);
+      background: var(--xmu-light);
+    }
+    #drop-zone .icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+    #drop-zone .main-text {
+      font-size: 16px;
+      font-weight: 500;
+      color: #444;
+      margin-bottom: 6px;
+    }
+    #drop-zone .sub-text {
+      font-size: 13px;
+      color: #888;
+    }
+    #drop-zone .file-selected {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      font-size: 15px;
+      color: var(--xmu-blue);
+      font-weight: 500;
+    }
+    #drop-zone .file-selected .file-icon { font-size: 28px; }
+
+    #file-input { display: none; }
+
+    /* ---- 选项 ---- */
+    .options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .option-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .option-item:hover { border-color: var(--xmu-blue); background: var(--xmu-light); }
+    .option-item input[type="checkbox"] { margin-top: 2px; accent-color: var(--xmu-blue); }
+    .option-item .opt-label { font-size: 14px; font-weight: 500; }
+    .option-item .opt-desc { font-size: 12px; color: #777; margin-top: 2px; }
+
+    .option-item.checked {
+      border-color: var(--xmu-blue);
+      background: var(--xmu-light);
+    }
+
+    /* ---- 警告标签 ---- */
+    .badge-warn {
+      display: inline-block;
+      font-size: 10px;
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    /* ---- 按钮 ---- */
+    .btn-primary {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      background: var(--xmu-blue);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+      letter-spacing: 1px;
+    }
+    .btn-primary:hover { background: var(--xmu-navy); }
+    .btn-primary:disabled {
+      background: #aac0d8;
+      cursor: not-allowed;
+    }
+
+    /* ---- 进度状态 ---- */
+    #status {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-top: 16px;
+    }
+    #status.processing {
+      display: flex;
+      background: var(--xmu-light);
+      color: var(--xmu-navy);
+      border: 1px solid #b3cde8;
+    }
+    #status.success {
+      display: flex;
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    #status.error {
+      display: flex;
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(0,91,172,0.2);
+      border-top-color: var(--xmu-blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---- 修改列表 ---- */
+    #changes-section { display: none; }
+    #changes-list {
+      list-style: none;
+      padding: 0;
+    }
+    #changes-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13.5px;
+      color: #444;
+    }
+    #changes-list li:last-child { border-bottom: none; }
+    #changes-list li::before {
+      content: '✓';
+      color: var(--success);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    /* ---- 格式说明 ---- */
+    .spec-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .spec-table th, .spec-table td {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      text-align: left;
+    }
+    .spec-table th {
+      background: var(--gray);
+      color: var(--xmu-navy);
+      font-weight: 600;
+    }
+    .spec-table tr:nth-child(even) td { background: #fafbfd; }
+
+    /* ---- 分隔标题 ---- */
+    .section-label {
+      font-size: 12px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+
+    /* ---- 响应式 ---- */
+    @media (max-width: 600px) {
+      .options-grid { grid-template-columns: 1fr; }
+      main { padding: 0 12px 40px; }
+      .card { padding: 20px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">厦门大学 <span>论文格式工具</span></div>
+  <div class="subtitle">XMU Thesis Formatter · 2026版规范</div>
+</header>
+
+<main>
+
+  <!-- 上传卡片 -->
+  <div class="card">
+    <div class="card-title">上传论文文档</div>
+    <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div class="icon">📄</div>
+      <div class="main-text">点击选择文件，或将文件拖入此处</div>
+      <div class="sub-text">仅支持 Word 文档（.docx）· 最大 50MB</div>
+      <div class="file-selected" id="file-display">
+        <span class="file-icon">📝</span>
+        <span id="file-name-text"></span>
+      </div>
+    </div>
+    <input type="file" id="file-input" accept=".docx" />
+  </div>
+
+  <!-- 格式选项卡片 -->
+  <div class="card">
+    <div class="card-title">格式修正选项</div>
+    <div class="options-grid" id="options-grid">
+
+      <label class="option-item checked">
+        <input type="checkbox" name="fix_page_setup" checked />
+        <div>
+          <div class="opt-label">页面设置</div>
+          <div class="opt-desc">A4纸，边距 上下2.5 左右2.8cm</div>
+        </div>
+      </label>
+
+      <label class="option-item checked">
+        <input type="checkbox" name="fix_styles" checked />
+        <div>
+          <div class="opt-label">样式规范</div>
+          <div class="opt-desc">标题/正文字体、字号、行距统一</div>
+        </div>
+      </label>
+
+      <label class="option-item checked">
+        <input type="checkbox" name="fix_heading_direct" checked />
+        <div>
+          <div class="opt-label">清除标题覆盖格式</div>
+          <div class="opt-desc">移除标题上多余的手动格式</div>
+        </div>
+      </label>
+
+      <label class="option-item checked">
+        <input type="checkbox" name="fix_body_fonts" checked />
+        <div>
+          <div class="opt-label">修正正文字体</div>
+          <div class="opt-desc">统一正文中文为宋体</div>
+        </div>
+      </label>
+
+      <label class="option-item checked">
+        <input type="checkbox" name="add_page_numbers" checked />
+        <div>
+          <div class="opt-label">自动页码</div>
+          <div class="opt-desc">页脚居中，格式：- X -</div>
+        </div>
+      </label>
+
+      <label class="option-item checked">
+        <input type="checkbox" name="add_headers" checked />
+        <div>
+          <div class="opt-label">添加页眉</div>
+          <div class="opt-desc">奇数页=章节标题，偶数页=论文标题</div>
+        </div>
+      </label>
+
+      <label class="option-item">
+        <input type="checkbox" name="auto_detect_headings" />
+        <div>
+          <div class="opt-label">
+            自动识别标题
+            <span class="badge-warn">谨慎使用</span>
+          </div>
+          <div class="opt-desc">根据"第X章/节"等模式自动套用标题样式</div>
+        </div>
+      </label>
+
+      <label class="option-item">
+        <input type="checkbox" name="regenerate_toc" />
+        <div>
+          <div class="opt-label">重新生成目录</div>
+          <div class="opt-desc">替换旧目录条目，插入自动更新域（Word打开后按F9）</div>
+        </div>
+      </label>
+
+    </div>
+
+    <!-- 论文标题输入（可选，留空则自动从封面提取） -->
+    <div id="title-section" style="margin-top:16px;">
+      <div class="section-label" style="margin-bottom:6px;">偶数页页眉标题（可选，留空则自动从封面提取）</div>
+      <input type="text" id="thesis-title-input"
+        placeholder="留空 = 自动读取封面标题"
+        style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;
+               font-size:14px;outline:none;transition:border-color 0.15s;color:#444;"
+        onfocus="this.style.borderColor='var(--xmu-blue)'"
+        onblur="this.style.borderColor='var(--border)'" />
+    </div>
+  </div>
+
+  <!-- 操作按钮 -->
+  <div class="card">
+    <button class="btn-primary" id="format-btn" disabled onclick="doFormat()">
+      选择文件后开始格式化
+    </button>
+    <div id="status"></div>
+    <div id="changes-section" style="margin-top:20px;">
+      <div class="section-label">本次修改内容</div>
+      <ul id="changes-list"></ul>
+    </div>
+  </div>
+
+  <!-- 格式规范说明 -->
+  <div class="card">
+    <div class="card-title">厦大论文格式规范（202511版）</div>
+    <table class="spec-table">
+      <thead>
+        <tr><th>元素</th><th>中文字体</th><th>英文字体</th><th>字号</th><th>格式</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>正文</td><td>宋体</td><td>Times New Roman</td><td>12pt（小四）</td><td>两端对齐，1.5倍行距，首行缩进2字符</td></tr>
+        <tr><td>一级标题（第X章）</td><td>黑体</td><td>Times New Roman</td><td>15pt（小三）</td><td>居中，加粗，单倍行距</td></tr>
+        <tr><td>二级标题（第X节）</td><td>黑体</td><td>Times New Roman</td><td>14pt（四号）</td><td>居中，加粗，单倍行距</td></tr>
+        <tr><td>三级标题（一、）</td><td>黑体</td><td>Times New Roman</td><td>12pt（小四）</td><td>左对齐，加粗</td></tr>
+        <tr><td>四级标题（（一））</td><td>黑体</td><td>Times New Roman</td><td>12pt（小四）</td><td>左对齐，加粗</td></tr>
+        <tr><td>摘要/目录标题</td><td>黑体</td><td>Times New Roman</td><td>16pt（三号）</td><td>居中，加粗，1.5倍行距</td></tr>
+        <tr><td>图表名称</td><td>宋体</td><td>Times New Roman</td><td>12pt（小四，加粗）</td><td>居中，置于图下/表上方</td></tr>
+        <tr><td>表格/图内文字</td><td>宋体</td><td>Times New Roman</td><td>10.5pt（五号）</td><td>—</td></tr>
+        <tr><td>参考文献条目</td><td>宋体</td><td>Times New Roman</td><td>10.5pt（五号）</td><td>左顶格</td></tr>
+        <tr><td>页眉</td><td>宋体</td><td>Times New Roman</td><td>10.5pt（五号）</td><td>奇数页=章标题，偶数页=论文标题，居中</td></tr>
+        <tr><td>页脚页码</td><td>宋体</td><td>Times New Roman</td><td>10.5pt（五号）</td><td>居中，格式：- X -</td></tr>
+        <tr><td colspan="5" style="color:#666;font-style:italic;">页面：A4，上下边距2.54cm（1英寸），左右边距2.8cm，页眉距1.5cm，页脚距1.7cm</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+<script>
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const formatBtn = document.getElementById('format-btn');
+  const statusDiv = document.getElementById('status');
+  const changesSection = document.getElementById('changes-section');
+  const changesList = document.getElementById('changes-list');
+  const fileDisplay = document.getElementById('file-display');
+  const fileNameText = document.getElementById('file-name-text');
+
+  let selectedFile = null;
+
+  // 文件选择
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) setFile(e.target.files[0]);
+  });
+
+  // 拖拽
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.toLowerCase().endsWith('.docx')) {
+      setFile(file);
+    } else {
+      showStatus('error', '请上传 .docx 格式的文件');
+    }
+  });
+
+  function setFile(file) {
+    selectedFile = file;
+    // 隐藏默认提示，显示文件名
+    dropZone.querySelector('.icon').style.display = 'none';
+    dropZone.querySelector('.main-text').style.display = 'none';
+    dropZone.querySelector('.sub-text').style.display = 'none';
+    fileDisplay.style.display = 'flex';
+    fileNameText.textContent = file.name;
+    formatBtn.disabled = false;
+    formatBtn.textContent = '开始格式化';
+    hideStatus();
+  }
+
+  // 选项checkbox样式联动
+  document.querySelectorAll('.option-item input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', function() {
+      this.closest('.option-item').classList.toggle('checked', this.checked);
+    });
+  });
+
+  function getOptions() {
+    const opts = {};
+    document.querySelectorAll('.option-item input[type="checkbox"]').forEach(cb => {
+      opts[cb.name] = cb.checked ? 'true' : 'false';
+    });
+    opts['thesis_title'] = document.getElementById('thesis-title-input').value.trim();
+    return opts;
+  }
+
+  async function doFormat() {
+    if (!selectedFile) return;
+
+    formatBtn.disabled = true;
+    formatBtn.textContent = '处理中…';
+    showStatus('processing', '正在应用厦大论文格式规范，请稍候…');
+    changesSection.style.display = 'none';
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    const opts = getOptions();
+    for (const [k, v] of Object.entries(opts)) formData.append(k, v);
+
+    try {
+      const response = await fetch('/format', { method: 'POST', body: formData });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || `服务器错误 ${response.status}`);
+      }
+
+      // 触发下载
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const disposition = response.headers.get('Content-Disposition') || '';
+      let fileName = '论文_厦大格式.docx';
+      const match = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+      if (match) {
+        try { fileName = decodeURIComponent(match[1].replace(/"/g, '')); }
+        catch { fileName = match[1]; }
+      }
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      showStatus('success', `格式化完成！文件已开始下载：${fileName}`);
+
+      // 获取修改详情（预览接口）
+      await loadChanges(opts);
+
+    } catch (err) {
+      showStatus('error', `处理失败：${err.message}`);
+    } finally {
+      formatBtn.disabled = false;
+      formatBtn.textContent = '重新格式化';
+    }
+  }
+
+  async function loadChanges(opts) {
+    try {
+      const formData2 = new FormData();
+      formData2.append('file', selectedFile);
+      for (const [k, v] of Object.entries(opts)) formData2.append(k, v);
+
+      const res = await fetch('/preview', { method: 'POST', body: formData2 });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.changes && data.changes.length > 0) {
+        changesList.innerHTML = '';
+        data.changes.forEach(c => {
+          const li = document.createElement('li');
+          li.textContent = c;
+          changesList.appendChild(li);
+        });
+        changesSection.style.display = 'block';
+      }
+    } catch {
+      // 预览失败不影响主流程
+    }
+  }
+
+  function showStatus(type, msg) {
+    statusDiv.className = type;
+    statusDiv.style.display = 'flex';
+    if (type === 'processing') {
+      statusDiv.innerHTML = `<div class="spinner"></div><span>${msg}</span>`;
+    } else if (type === 'success') {
+      statusDiv.innerHTML = `<span style="font-size:18px">✅</span><span>${msg}</span>`;
+    } else {
+      statusDiv.innerHTML = `<span style="font-size:18px">❌</span><span>${msg}</span>`;
+    }
+  }
+
+  function hideStatus() {
+    statusDiv.style.display = 'none';
+    statusDiv.className = '';
+  }
+</script>
+
+</body>
+</html>
