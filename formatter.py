@@ -1019,7 +1019,12 @@ def fix_captions_and_tables(doc):
                 pPr.append(jc)
             jc.set(qn('w:val'), 'center')
 
-            # 清除段落首行缩进
+            # 清除列表编号（numPr）——原段落若挂有列表样式会产生项目符号和左缩进，导致居中错位
+            numPr = pPr.find(qn('w:numPr'))
+            if numPr is not None:
+                pPr.remove(numPr)
+
+            # 清除段落所有缩进（列表会同时带来 w:ind left/hanging）
             ind = pPr.find(qn('w:ind'))
             if ind is not None:
                 for attr in (qn('w:firstLine'), qn('w:hanging'), qn('w:left')):
