@@ -70,7 +70,7 @@ HEADING4_PATTERNS = [
 ABSTRACT_ZH_PATTERNS = [r'^摘\s*要$', r'^摘　要$']
 ABSTRACT_EN_PATTERNS = [r'^Abstract$', r'^ABSTRACT$']
 KEYWORDS_PATTERNS = [r'^关键词[：:]', r'^Keywords[：:]']
-REFERENCE_PATTERNS = [r'^参考文献$', r'^References$']
+REFERENCE_PATTERNS = [r'^参考文献[：:]?\s*$', r'^References[：:]?\s*$']
 ACKNOWLEDGMENT_PATTERNS = [r'^致\s*谢$', r'^Acknowledgments?$']
 
 # 特殊节标题（需居中）：摘要、目录、参考文献、致谢等
