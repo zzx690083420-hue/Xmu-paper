@@ -266,6 +266,36 @@ def update_styles(doc):
         except KeyError:
             changes.append(f'未找到样式：{style_name}，已跳过')
 
+    # 同步更新所有通过 outlineLvl 检测到的标题样式（如 标题 1/2/3/4）
+    # 确保中文或自定义命名的标题样式获得正确的字体、字号、对齐设置
+    _heading_lvl_config = {
+        1: (15, True,  WD_ALIGN_PARAGRAPH.CENTER, 1.0, Pt(12),  Pt(5),   Pt(0)),
+        2: (14, True,  WD_ALIGN_PARAGRAPH.CENTER, 1.0, Pt(5),   Pt(2.5), Pt(0)),
+        3: (12, True,  WD_ALIGN_PARAGRAPH.LEFT,   1.5, Pt(2.5), None,    Pt(0)),
+        4: (12, True,  WD_ALIGN_PARAGRAPH.LEFT,   1.5, None,    None,    Pt(0)),
+    }
+    _standard_heading_names = {f'Heading {n}' for n in range(1, 9)}
+    _doc_heading_styles = _get_heading_styles(doc)
+    for _sname, _lvl in _doc_heading_styles.items():
+        if _sname in _standard_heading_names:
+            continue  # 已在上面的循环中处理
+        if _lvl not in _heading_lvl_config:
+            continue
+        _size_pt, _bold, _align, _line_sp, _sp_before, _sp_after, _first_indent = _heading_lvl_config[_lvl]
+        try:
+            _style = doc.styles[_sname]
+            _set_style_fonts(_style.element, ascii_font=FONT_ENGLISH,
+                             east_asia_font=FONT_CHINESE_HEADING, size_pt=_size_pt, bold=_bold)
+            _set_style_paragraph_format(_style.element,
+                                         alignment=_align,
+                                         line_spacing=_line_sp,
+                                         space_before=_sp_before,
+                                         space_after=_sp_after,
+                                         first_line_indent=_first_indent)
+            changes.append(f'更新自定义标题样式：{_sname}（黑体 {_size_pt}pt 级别{_lvl}）')
+        except KeyError:
+            pass
+
     # 摘要/目录标题样式：黑体三号（16pt）加粗居中，1.5倍行距
     # 若样式不存在则从 Normal 派生创建
     for style_name in ('摘要目录标题',):
@@ -401,12 +431,12 @@ def update_styles(doc):
             break
 
     if zh_toc_title_idx >= 0:
-        # 找中文目录结束位置：从标题后第一个匹配 HEADING1_PATTERNS 的段落
+        # 找中文目录结束位置：遇到一级标题段落或英文目录标题即停止
+        _hs = _get_heading_styles(doc)
         zh_toc_end_idx = len(all_paras)
         for i in range(zh_toc_title_idx + 1, len(all_paras)):
             para = all_paras[i]
-            if (para.style.name.startswith('Heading') and
-                    _matches_any(para.text.strip(), HEADING1_PATTERNS)):
+            if _hs.get(para.style.name) == 1 and para.text.strip():
                 zh_toc_end_idx = i
                 break
             # 遇到另一个目录标题（Contents）也停止
@@ -650,6 +680,34 @@ def _matches_any(text, patterns):
     return False
 
 
+def _get_heading_styles(doc):
+    """
+    检测所有通过 w:outlineLvl 定义标题级别的段落样式。
+    返回 {style_name: level}，level 为 1-based（1=一级标题，2=二级标题…）。
+    与样式名无关，可处理中文名（标题 1）、英文名（Heading 1）及任意自定义名称。
+    """
+    result = {}
+    for style in doc.styles:
+        if style.type != WD_STYLE_TYPE.PARAGRAPH:
+            continue
+        pPr = style.element.find(qn('w:pPr'))
+        if pPr is None:
+            continue
+        ol = pPr.find(qn('w:outlineLvl'))
+        if ol is None:
+            continue
+        val = ol.get(qn('w:val'))
+        if val is None:
+            continue
+        try:
+            lvl = int(val)
+            if 0 <= lvl <= 8:
+                result[style.name] = lvl + 1  # outlineLvl 0 → level 1
+        except ValueError:
+            pass
+    return result
+
+
 def auto_detect_headings(doc):
     """
     对没有应用标题样式的段落，根据内容模式自动检测并应用标题样式。
@@ -660,14 +718,16 @@ def auto_detect_headings(doc):
                           'Default Paragraph Style', 'No Spacing'}
     heading_applied = 0
 
+    heading_styles = _get_heading_styles(doc)
+
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
             continue
 
         current_style = para.style.name
-        # 只对非标题样式的段落做检测
-        if current_style.startswith('Heading') or current_style.startswith('标题'):
+        # 只对非标题样式的段落做检测（使用 outlineLvl 判断）
+        if current_style in heading_styles:
             continue
 
         if current_style not in normal_style_names:
@@ -702,21 +762,24 @@ def fix_heading_direct_format(doc):
     changes = []
     cleared = 0
 
+    # 使用 outlineLvl 检测所有标题样式（与样式名无关）
+    heading_styles = _get_heading_styles(doc)
+
     # 从目录之后开始处理标题（封面/声明/摘要/目录区域不做任何修改）
     chapter_style = _get_chapter_heading_style(doc)
     post_toc_idx = _find_post_toc_idx(doc)
-    # 在目录之后找到第一个真实章节标题
+    # 在目录之后找到第一个章节标题（不依赖 HEADING1_PATTERNS，支持任意命名）
     first_chapter_idx = None
     for i, para in enumerate(doc.paragraphs):
         if i < post_toc_idx:
             continue
         if para.style.name == chapter_style and para.text.strip():
-            if _matches_any(para.text.strip(), HEADING1_PATTERNS):
-                first_chapter_idx = i
-                break
+            first_chapter_idx = i
+            break
 
     for i, para in enumerate(doc.paragraphs):
-        if not para.style.name.startswith('Heading'):
+        # 使用 outlineLvl 判断是否为标题（支持 Heading N、标题 N 及任意自定义样式）
+        if para.style.name not in heading_styles:
             continue
         # 跳过目录之前的所有段落（封面/声明/摘要/目录）
         if i < post_toc_idx:
@@ -729,16 +792,21 @@ def fix_heading_direct_format(doc):
         if pPr is None:
             pPr = OxmlElement('w:pPr')
             para._p.insert(0, pPr)
-        # 清除 spacing（间距）、ind（缩进）的直接覆盖
-        for tag in [qn('w:spacing'), qn('w:ind')]:
-            elem = pPr.find(tag)
-            if elem is not None:
-                pPr.remove(elem)
+        # 清除 spacing（间距）直接覆盖
+        spacing = pPr.find(qn('w:spacing'))
+        if spacing is not None:
+            pPr.remove(spacing)
+        # 标题首行缩进强制置0：不能仅删除 w:ind，否则会从 Normal 样式继承 firstLine=480
+        ind = pPr.find(qn('w:ind'))
+        if ind is None:
+            ind = OxmlElement('w:ind')
+            pPr.append(ind)
+        ind.set(qn('w:firstLine'), '0')
+        ind.attrib.pop(qn('w:hanging'), None)
 
-        # 强制对齐：Heading 1/2 居中，Heading 3/4 左对齐
-        m_level = re.match(r'^Heading (\d+)$', para.style.name)
-        if m_level:
-            level = int(m_level.group(1))
+        # 强制对齐：一级/二级标题居中，三级/四级标题左对齐（使用 outlineLvl 级别）
+        level = heading_styles.get(para.style.name)
+        if level is not None:
             align_val = 'center' if level <= 2 else 'left'
             jc = pPr.find(qn('w:jc'))
             if jc is None:
@@ -746,7 +814,7 @@ def fix_heading_direct_format(doc):
                 pPr.append(jc)
             jc.set(qn('w:val'), align_val)
 
-        # 章节标题（第X章）：强制另起一页
+        # 章节标题（一级标题样式）：强制另起一页
         is_chapter = (para.style.name == chapter_style and bool(para.text.strip()))
         pgBr = pPr.find(qn('w:pageBreakBefore'))
         if is_chapter:
@@ -984,7 +1052,9 @@ def fix_body_text_fonts(doc):
     """
     changes = []
 
-    _SKIP_PREFIXES = ('Heading', 'toc ', 'TOC ', 'List')
+    # 使用 outlineLvl 检测所有标题样式（与样式名无关，支持 Heading N/标题 N/自定义名）
+    heading_styles = _get_heading_styles(doc)
+    _SKIP_PREFIXES = ('toc ', 'TOC ', 'List')
     _SKIP_NAMES = {
         '摘要目录标题', 'Caption', '题注', 'Header', 'Footer',
         'footnote text', 'endnote text', 'footnote reference',
@@ -997,9 +1067,8 @@ def fix_body_text_fonts(doc):
         if i < post_toc_idx:
             continue
         if para.style.name == chapter_style and para.text.strip():
-            if _matches_any(para.text.strip(), HEADING1_PATTERNS):
-                first_chapter_idx = i
-                break
+            first_chapter_idx = i
+            break
 
     fixed = 0
     in_references = False  # 是否处于参考文献区域
@@ -1015,11 +1084,14 @@ def fix_body_text_fonts(doc):
         # 检测进入/离开参考文献区域
         if _matches_any(text, REFERENCE_PATTERNS):
             in_references = True
-        elif in_references and sname.startswith('Heading') and text:
+        elif in_references and sname in heading_styles and text:
             # 遇到下一个标题（致谢等）则离开参考文献区域
             in_references = False
 
-        # 跳过标题、目录、题注、页眉页脚等特殊样式
+        # 跳过标题样式（通过 outlineLvl 检测，与名称无关）
+        if sname in heading_styles:
+            continue
+        # 跳过目录、题注、页眉页脚等特殊样式
         if any(sname.startswith(p) for p in _SKIP_PREFIXES):
             continue
         if sname in _SKIP_NAMES:
@@ -1236,23 +1308,33 @@ def _extract_thesis_title(doc):
 
 def _get_chapter_heading_style(doc):
     """
-    检测文档实际使用的章节标题样式名（如 'Heading 1' 或 'Heading 2'）。
-    优先找匹配第X章/Chapter N 的 Heading N；若无则找最低编号的非空 Heading N。
-    若无任何 Heading 段落则返回 'Heading 1'。
+    检测文档实际使用的章节标题（一级标题）样式名。
+    使用 w:outlineLvl 进行检测，与样式名无关（支持 Heading 1、标题 1 等任意名称）。
+    优先返回有实际段落使用的最低级别（level=1）样式名。
     """
-    # 优先：找到匹配标准章节模式的最低 Heading 级别
-    for level in range(1, 5):
-        style_name = f'Heading {level}'
+    heading_styles = _get_heading_styles(doc)
+
+    # 一级标题样式集合（outlineLvl=0 → level=1）
+    level1_styles = {name for name, lvl in heading_styles.items() if lvl == 1}
+
+    # 优先：实际在文档中使用的一级标题样式
+    for para in doc.paragraphs:
+        if para.style.name in level1_styles and para.text.strip():
+            return para.style.name
+
+    # 回退：使用任意级别标题样式（取最低级别）
+    min_level = None
+    min_style = None
+    for name, lvl in heading_styles.items():
         for para in doc.paragraphs:
-            if para.style.name == style_name and para.text.strip():
-                if _matches_any(para.text.strip(), HEADING1_PATTERNS):
-                    return style_name
-    # 回退：找文档中存在的最低 Heading 级别（不要求章节模式）
-    for level in range(1, 5):
-        style_name = f'Heading {level}'
-        for para in doc.paragraphs:
-            if para.style.name == style_name and para.text.strip():
-                return style_name
+            if para.style.name == name and para.text.strip():
+                if min_level is None or lvl < min_level:
+                    min_level = lvl
+                    min_style = name
+                break
+    if min_style:
+        return min_style
+
     return 'Heading 1'
 
 
@@ -1567,39 +1649,41 @@ def _make_toc_field_paragraphs(doc, skip_paras=None, translate=False, static=Fal
     """
     skip_paras = skip_paras or set()
 
+    # 使用 outlineLvl 检测所有标题样式（支持 Heading N、标题 N 及任意自定义名）
+    doc_heading_styles = _get_heading_styles(doc)
+
     # 动态检测最高级标题，使其映射为 toc 1
     min_level = None
     for para in doc.paragraphs:
         if id(para) in skip_paras:
             continue
-        m = re.match(r'^Heading (\d+)$', para.style.name)
-        if m and para.text.strip():
-            lv = int(m.group(1))
+        lv = doc_heading_styles.get(para.style.name)
+        if lv is not None and para.text.strip():
             if min_level is None or lv < min_level:
                 min_level = lv
     if min_level is None:
         min_level = 1
 
-    heading_to_toc = {
-        f'Heading {min_level}':     'toc 1',
-        f'Heading {min_level + 1}': 'toc 2',
-        f'Heading {min_level + 2}': 'toc 3',
-    }
+    # 构建 heading 样式 → toc 样式 映射（相对级别）
+    heading_to_toc = {}
+    for sname, lvl in doc_heading_styles.items():
+        rel = lvl - min_level + 1
+        if 1 <= rel <= 3:
+            heading_to_toc[sname] = f'toc {rel}'
+    # 兼容性：确保标准 Heading N 名也在映射中
+    for offset in range(3):
+        sname = f'Heading {min_level + offset}'
+        if sname not in heading_to_toc:
+            heading_to_toc[sname] = f'toc {offset + 1}'
     toc_instr = f' TOC \\o "{min_level}-{min_level + 2}" \\h \\z \\u '
 
     # 从文档中收集标题条目
-    # 当 min_level > 1（章节用 Heading 2+），对第一层级做章节模式过滤，
-    # 避免封面/声明等偶发 Heading 段落进入目录
-    filter_top_level = (min_level > 1)
     entries = []  # (toc_style, display_text, source_para)
     for para in doc.paragraphs:
         if id(para) in skip_paras:
             continue
         toc_style = heading_to_toc.get(para.style.name)
         if toc_style and para.text.strip():
-            if toc_style == 'toc 1' and filter_top_level:
-                if not _matches_any(para.text.strip(), HEADING1_PATTERNS):
-                    continue
             entry_text = para.text.strip()
             if translate:
                 entry_text = _translate_toc_entry(entry_text)
@@ -2094,9 +2178,8 @@ def regenerate_toc(doc):
         first_chapter_para = None
         for para in doc.paragraphs:
             if para.style.name == chapter_style and para.text.strip():
-                if _matches_any(para.text.strip(), HEADING1_PATTERNS):
-                    first_chapter_para = para
-                    break
+                first_chapter_para = para
+                break
 
         if first_chapter_para is not None:
             skip_ids = {id(first_chapter_para)}
