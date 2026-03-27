@@ -1042,6 +1042,23 @@ def fix_captions_and_tables(doc):
         changes.append(f'题注格式：已修正 {caption_count} 个题注段落（宋体 10.5pt 加粗 居中）')
     if figure_count:
         changes.append(f'图片：已为 {figure_count} 个图片段落设置 keepWithNext')
+
+    # ── 表格行跨页防护：在每行的 w:trPr 上设置 w:cantSplit ──
+    # 只设置在行级别（w:trPr），不修改单元格内容
+    table_row_count = 0
+    for table in doc.tables:
+        for row in table.rows:
+            trPr = row._tr.find(qn('w:trPr'))
+            if trPr is None:
+                trPr = OxmlElement('w:trPr')
+                row._tr.insert(0, trPr)
+            if trPr.find(qn('w:cantSplit')) is None:
+                cant_split = OxmlElement('w:cantSplit')
+                trPr.append(cant_split)
+                table_row_count += 1
+    if table_row_count:
+        changes.append(f'表格跨页防护：已为 {table_row_count} 行设置 cantSplit（防止单行跨页）')
+
     return changes
 
 
