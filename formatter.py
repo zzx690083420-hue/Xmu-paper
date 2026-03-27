@@ -1342,7 +1342,10 @@ def _find_post_toc_idx(doc):
     """
     找到目录结束后第一个正文段落的索引。
     扫描所有段落，找到最后一个目录相关段落（目录标题或 toc 样式段落），
-    返回其后一个段落的索引。若找不到目录，返回 0（从头开始）。
+    返回其后一个段落的索引。
+    若找不到目录，退而寻找第一个匹配 HEADING1_PATTERNS 的章节标题段落，
+    以此作为正文起点（避免封面/声明页的 Heading 样式段落被误处理）。
+    若两者均找不到，返回 0。
     """
     TOC_TITLE_PATS = [r'^目\s*录$', r'^目　录$', r'^Contents?$', r'^TABLE OF CONTENTS$']
     last_toc_idx = -1
@@ -1358,7 +1361,16 @@ def _find_post_toc_idx(doc):
         if ('toc' in sname.lower() or '目录' in sname) and last_toc_idx >= 0:
             last_toc_idx = i
 
-    return last_toc_idx + 1  # 目录后第一个段落，若无目录则为 0
+    if last_toc_idx >= 0:
+        return last_toc_idx + 1  # 目录后第一个段落
+
+    # 无目录：用第一个匹配标准章节模式的段落作为正文起点
+    # 防止封面/声明页中偶发的 Heading 样式段落被当作章节处理
+    for i, para in enumerate(doc.paragraphs):
+        if para.text.strip() and _matches_any(para.text.strip(), HEADING1_PATTERNS):
+            return i
+
+    return 0  # 完全找不到任何章节标记，从头开始
 
 
 def _insert_chapter_section_breaks(doc, chapter_style):
@@ -2175,8 +2187,11 @@ def regenerate_toc(doc):
     # ── 若有中文但无英文（或两者都没有）：插入缺失的目录节 ──
     if not found_zh or not found_en:
         chapter_style = _get_chapter_heading_style(doc)
+        post_toc = _find_post_toc_idx(doc)
         first_chapter_para = None
-        for para in doc.paragraphs:
+        for i, para in enumerate(doc.paragraphs):
+            if i < post_toc:
+                continue
             if para.style.name == chapter_style and para.text.strip():
                 first_chapter_para = para
                 break
